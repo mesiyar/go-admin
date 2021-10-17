@@ -1,0 +1,93 @@
+package models
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"regexp"
+	"strings"
+
+	"github.com/bitly/go-simplejson"
+	"github.com/go-admin-team/go-admin-core/sdk"
+	"github.com/go-admin-team/go-admin-core/sdk/runtime"
+	"github.com/go-admin-team/go-admin-core/storage"
+
+	"go-admin/common/models"
+)
+
+type SysCompany struct {
+	Id          int    `json:"id" gorm:"primaryKey;autoIncrement;comment:主键编码"`
+	CompanyName string `json:"company_name" gorm:"size:50;comment:公司名称"`
+	ParentId    int    `json:"parent_id" gorm:"size:11;comment:上级id"`
+	IsStore     int8   `json:"is_store" gorm:"size:1;comment:是否是经销商"`
+	ProvinceId  int    `json:"province_id" gorm:"size:11;comment:所在省"`
+	CityId      int    `json:"city_id" gorm:"size:11;comment:所在市"`
+	DistrictId  int    `json:"district_id" gorm:"size:11;comment:区域id"`
+	Address     string `json:"type" gorm:"size:50;comment:详细地址"`
+	models.ModelTime
+	models.ControlBy
+}
+
+func (SysCompany) TableName() string {
+	return "sys_company"
+}
+
+func (e *SysCompany) Generate() models.ActiveRecord {
+	o := *e
+	return &o
+}
+
+func (e *SysCompany) GetId() interface{} {
+	return e.Id
+}
+
+func SaveSysCompany(message storage.Messager) (err error) {
+	var rb []byte
+	rb, err = json.Marshal(message.GetValues())
+	if err != nil {
+		fmt.Errorf("json Marshal error, %s", err.Error())
+		return err
+	}
+
+	var l runtime.Routers
+	err = json.Unmarshal(rb, &l)
+	if err != nil {
+		fmt.Errorf("json Unmarshal error, %s", err.Error())
+		return err
+	}
+	dbList := sdk.Runtime.GetDb()
+	for _, d := range dbList {
+		for _, v := range l.List {
+			if v.HttpMethod != "HEAD" ||
+				strings.Contains(v.RelativePath, "/swagger/") ||
+				strings.Contains(v.RelativePath, "/static/") ||
+				strings.Contains(v.RelativePath, "/form-generator/") ||
+				strings.Contains(v.RelativePath, "/sys/tables") {
+
+				// 根据接口方法注释里的@Summary填充接口名称，适用于代码生成器
+				// 可在此处增加配置路径前缀的if判断，只对代码生成的自建应用进行定向的接口名称填充
+				jsonFile, _ := ioutil.ReadFile("docs/swagger.json")
+				jsonData, _ := simplejson.NewFromReader(bytes.NewReader(jsonFile))
+				urlPath := v.RelativePath
+				idPatten := "(.*)/:(\\w+)" // 正则替换，把:id换成{id}
+				reg, _ := regexp.Compile(idPatten)
+				if reg.MatchString(urlPath) {
+					urlPath = reg.ReplaceAllString(v.RelativePath, "${1}/{${2}}") // 把:id换成{id}
+				}
+				apiTitle, _ := jsonData.Get("paths").Get(urlPath).Get(strings.ToLower(v.HttpMethod)).Get("summary").String()
+
+				err := d.Debug().Where(SysCompany{Path: v.RelativePath, Action: v.HttpMethod}).
+					Attrs(SysCompany{Handle: v.Handler, Title: apiTitle}).
+					FirstOrCreate(&SysCompany{}).
+					//Update("handle", v.Handler).
+					Error
+				if err != nil {
+					err := fmt.Errorf("Models SaveSysCompany error: %s \r\n ", err.Error())
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}

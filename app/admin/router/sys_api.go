@@ -12,13 +12,11 @@ func init() {
 	routerCheckRole = append(routerCheckRole, registerSysApiRouter)
 }
 
-// registerSysApiRouter
+// registerSysAreaRouter
 func registerSysApiRouter(v1 *gin.RouterGroup, authMiddleware *jwt.GinJWTMiddleware) {
 	api := apis.SysApi{}
 	r := v1.Group("/sys-api").Use(authMiddleware.MiddlewareFunc()).Use(middleware.AuthCheckRole())
 	{
 		r.GET("", api.GetPage)
-		r.GET("/:id", api.Get)
-		r.PUT("/:id", api.Update)
 	}
 }
